@@ -20,27 +20,46 @@ The main functions in Nix are:
 """
 module Nix
 
-    function rm(pkgname::AbstractString; dryrun::Bool=false)
-        try
-            pkgs = if dryrun
-                readlines(`nix-env --query --installed`)
-            else
-                readlines(`nix-env --query --installed $pkgname`)
-            end
-            map(chomp, pkgs)
-        catch
-            error("Cannot list installed packages")
+    function add(pkgname::AbstractString; dryrun::Bool=false)
+        cmd = ["nix-env", "--install"]
+        dryrun && push!(cmd, "--dry-run")
+        if isempty(pkgname)
+            error("Plese specify package to remove")
+        else
+            push!(cmd, pkgname)
         end
+
+        try
+            readlines(Cmd(cmd))
+        catch
+            error("Cannot uninstall package `$pkgname`")
+        end
+        return nothing
+    end
+
+    function rm(pkgname::AbstractString; dryrun::Bool=false)
+        cmd = ["nix-env", "--uninstall"]
+        dryrun && push!(cmd, "--dry-run")
+        if isempty(pkgname)
+            error("Plese specify package to remove")
+        else
+            push!(cmd, pkgname)
+        end
+
+        try
+            readlines(Cmd(cmd))
+        catch
+            error("Cannot uninstall package `$pkgname`")
+        end
+        return nothing
     end
 
     "List all installed packages."
     function installed(pkgname::AbstractString="")
+        cmd = ["nix-env", "--query", "--installed"]
+        !isempty(pkgname) && push!(cmd, pkgname)
         try
-            pkgs = if isempty(pkgname)
-                readlines(`nix-env --query --installed`)
-            else
-                readlines(`nix-env --query --installed $pkgname`)
-            end
+            pkgs = readlines(Cmd(cmd))
             map(chomp, pkgs)
         catch
             error("Cannot list installed packages")
@@ -49,12 +68,10 @@ module Nix
 
     "The query operates on the derivations that are available in the active Nix expression."
     function available(pkgname::AbstractString="")
+        cmd = ["nix-env", "--query", "--available"]
+        !isempty(pkgname) && push!(cmd, pkgname)
         try
-            pkgs = if isempty(pkgname)
-                readlines(`nix-env --query --available`)
-            else
-                readlines(`nix-env --query --available $pkgname`)
-            end
+            pkgs = readlines(Cmd(cmd))
             map(chomp, pkgs)
         catch
             error("Cannot list installed packages")
@@ -109,6 +126,9 @@ module Nix
     end
 
     function __init__()
+        profiledir = haskey(ENV, "NIX_PROFILE") ? ENV["NIX_PROFILE"] : joinpath(homedir(),".nix-profile")
+        !isdir(profiledir) && error("No Nix profile found in $profiledir")
+        global const PROFILE = profiledir
         pathdirs = split(ENV["PATH"],':')
         if findfirst(p->contains(p, ".nix-profile"), pathdirs) == 0
             error(""" Nix is not configured on your system.
